@@ -36,6 +36,12 @@ def test_infer_remote_endpoint_type(aws_env):
     )
     assert (
         kvikio.infer_remote_endpoint_type(
+            "https://account.blob.core.windows.net/container/blob"
+        )
+        == kvikio.RemoteEndpointType.AZURE_PUBLIC
+    )
+    assert (
+        kvikio.infer_remote_endpoint_type(
             "https://bucket-name.s3.region-code.amazonaws.com/"
             "object-key-name?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=sig&"
             "X-Amz-Credential=cred&X-Amz-SignedHeaders=host"

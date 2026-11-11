@@ -247,6 +247,7 @@ char const* get_remote_endpoint_type_name(RemoteEndpointType remote_endpoint_typ
     case RemoteEndpointType::S3_PRESIGNED_URL: return "S3 with presigned URL";
     case RemoteEndpointType::WEBHDFS: return "WebHDFS";
     case RemoteEndpointType::HTTP: return "HTTP";
+    case RemoteEndpointType::AZURE_PUBLIC: return "Azure public";
     case RemoteEndpointType::AUTO: return "AUTO";
     default:
       KVIKIO_FAIL("Unknown RemoteEndpointType: " +
@@ -267,6 +268,7 @@ std::vector<RemoteEndpointType> const& get_default_allow_list()
                                RemoteEndpointType::S3_PUBLIC,
                                RemoteEndpointType::S3_PRESIGNED_URL,
                                RemoteEndpointType::WEBHDFS,
+                               RemoteEndpointType::AZURE_PUBLIC,
                                RemoteEndpointType::HTTP};
   return res;
 }
@@ -295,6 +297,10 @@ std::unique_ptr<RemoteEndpoint> create_endpoint_from_type(std::string const& url
     case RemoteEndpointType::WEBHDFS:
       if (!WebHdfsEndpoint::is_url_valid(url)) { return nullptr; }
       return std::make_unique<WebHdfsEndpoint>(url);
+
+    case RemoteEndpointType::AZURE_PUBLIC:
+      if (!AzurePublicEndpoint::is_url_valid(url)) { return nullptr; }
+      return std::make_unique<AzurePublicEndpoint>(url);
 
     case RemoteEndpointType::HTTP:
       if (!HttpEndpoint::is_url_valid(url)) { return nullptr; }
@@ -680,6 +686,80 @@ bool S3EndpointWithPresignedUrl::is_url_valid(std::string const& url) noexcept
     // Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
     return parsed_url.query->find("X-Amz-Algorithm") != std::string::npos &&
            parsed_url.query->find("X-Amz-Signature") != std::string::npos;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::string AzurePublicEndpoint::to_blob_url(std::string const& url)
+{
+  // https://<account>.(blob|dfs).core.windows.net/<container>/<blob>[?<query>]
+  std::regex static const http_pattern{
+    R"(^https?://([a-z0-9]+)\.(?:blob|dfs)\.core\.windows\.net/([^/?#]+)/([^?#]+)(\?[^#]*)?$)",
+    std::regex_constants::icase};
+  // abfs[s]://<container>@<account>.dfs.core.windows.net/<blob>
+  std::regex static const abfs_pattern{
+    R"(^abfss?://([^@/]+)@([a-z0-9]+)\.dfs\.core\.windows\.net/([^?#]+)$)",
+    std::regex_constants::icase};
+
+  std::smatch matches;
+  std::string account, container, blob, query;
+  if (std::regex_match(url, matches, http_pattern)) {
+    account   = matches[1].str();
+    container = matches[2].str();
+    blob      = matches[3].str();
+    query     = matches[4].str();
+  } else if (std::regex_match(url, matches, abfs_pattern)) {
+    container = matches[1].str();
+    account   = matches[2].str();
+    blob      = matches[3].str();
+  } else {
+    KVIKIO_FAIL("Input string does not match a supported Azure Blob Storage URL format.",
+                std::invalid_argument);
+  }
+  return "https://" + account + ".blob.core.windows.net/" + container + "/" + blob + query;
+}
+
+AzurePublicEndpoint::AzurePublicEndpoint(std::string url)
+  : RemoteEndpoint{RemoteEndpointType::AZURE_PUBLIC}, _url{to_blob_url(url)}
+{
+  KVIKIO_NVTX_FUNC_RANGE();
+  // Without `x-ms-version`, anonymous requests are served using the 2009-09-19 API version.
+  _curl_header_list = curl_slist_append(NULL, "x-ms-version: 2021-08-06");
+  KVIKIO_EXPECT(_curl_header_list != nullptr,
+                "Failed to create curl header for Azure API version",
+                std::runtime_error);
+}
+
+AzurePublicEndpoint::~AzurePublicEndpoint() { curl_slist_free_all(_curl_header_list); }
+
+void AzurePublicEndpoint::setopt(CurlHandle& curl)
+{
+  curl.setopt(CURLOPT_URL, _url.c_str());
+  curl.setopt(CURLOPT_HTTPHEADER, _curl_header_list);
+}
+
+std::string AzurePublicEndpoint::str() const { return _url; }
+
+std::size_t AzurePublicEndpoint::get_file_size()
+{
+  KVIKIO_NVTX_FUNC_RANGE();
+  return get_file_size_using_head_impl(*this, _url);
+}
+
+void AzurePublicEndpoint::setup_range_request(CurlHandle& curl,
+                                              std::size_t file_offset,
+                                              std::size_t size)
+{
+  KVIKIO_NVTX_FUNC_RANGE();
+  setup_range_request_impl(curl, file_offset, size);
+}
+
+bool AzurePublicEndpoint::is_url_valid(std::string const& url) noexcept
+{
+  try {
+    to_blob_url(url);
+    return true;
   } catch (...) {
     return false;
   }
