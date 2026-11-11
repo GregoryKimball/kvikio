@@ -73,15 +73,15 @@ class RemoteHandleTest : public testing::Test {
       // Endpoint type: WebHDFS
       {"https://host:1234/webhdfs/v1/data.bin", kvikio::RemoteEndpointType::WEBHDFS},
 
-      // Endpoint type: Azure public
+      // Endpoint type: Azure
       {"https://account.blob.core.windows.net/container/blob-name",
-       kvikio::RemoteEndpointType::AZURE_PUBLIC},
+       kvikio::RemoteEndpointType::AZURE},
       {"https://account.dfs.core.windows.net/container/dir/blob-name",
-       kvikio::RemoteEndpointType::AZURE_PUBLIC},
+       kvikio::RemoteEndpointType::AZURE},
       {"https://account.blob.core.windows.net/container/blob-name?sv=2021-08-06&sig=sig",
-       kvikio::RemoteEndpointType::AZURE_PUBLIC},
+       kvikio::RemoteEndpointType::AZURE},
       {"abfss://container@account.dfs.core.windows.net/dir/blob-name",
-       kvikio::RemoteEndpointType::AZURE_PUBLIC},
+       kvikio::RemoteEndpointType::AZURE},
     };
   }
 
@@ -286,23 +286,29 @@ TEST_F(RemoteHandleTest, test_webhdfs_url)
   }
 }
 
-TEST_F(RemoteHandleTest, test_azure_public_url)
+TEST_F(RemoteHandleTest, test_azure_url)
 {
   {
-    test_helper(kvikio::RemoteEndpointType::AZURE_PUBLIC,
-                kvikio::AzurePublicEndpoint::is_url_valid);
+    test_helper(kvikio::RemoteEndpointType::AZURE, kvikio::AzureEndpoint::is_url_valid);
   }
 
   // URL conversion to the Blob service
   {
     std::string const expected{"https://account.blob.core.windows.net/container/dir/blob-name"};
-    EXPECT_EQ(kvikio::AzurePublicEndpoint::to_blob_url(
+    EXPECT_EQ(kvikio::AzureEndpoint::to_blob_url(
                 "abfss://container@account.dfs.core.windows.net/dir/blob-name"),
               expected);
-    EXPECT_EQ(kvikio::AzurePublicEndpoint::to_blob_url(
+    EXPECT_EQ(kvikio::AzureEndpoint::to_blob_url(
                 "https://account.dfs.core.windows.net/container/dir/blob-name"),
               expected);
-    EXPECT_EQ(kvikio::AzurePublicEndpoint(expected).str(), expected);
+    EXPECT_EQ(kvikio::AzureEndpoint(expected).str(), expected);
+  }
+
+  // A custom endpoint url, such as a local emulator, is used as is.
+  {
+    std::string const url{"http://127.0.0.1:10000/account/container/blob-name"};
+    EXPECT_FALSE(kvikio::AzureEndpoint::is_url_valid(url));
+    EXPECT_EQ(kvikio::AzureEndpoint(url).str(), url);
   }
 
   // Invalid URLs
@@ -316,9 +322,10 @@ TEST_F(RemoteHandleTest, test_azure_public_url)
       // Not an Azure host
       "https://example.com/container/blob-name"};
     for (auto const& invalid_url : invalid_urls) {
-      EXPECT_FALSE(kvikio::AzurePublicEndpoint::is_url_valid(invalid_url));
-      EXPECT_THROW(kvikio::AzurePublicEndpoint{invalid_url}, std::invalid_argument);
+      EXPECT_FALSE(kvikio::AzureEndpoint::is_url_valid(invalid_url));
     }
+    EXPECT_THROW(kvikio::AzureEndpoint{"abfss://account.dfs.core.windows.net/blob-name"},
+                 std::invalid_argument);
   }
 }
 
@@ -389,7 +396,7 @@ TEST_F(RemoteHandleTest, test_infer_remote_endpoint_type)
             kvikio::RemoteEndpointType::HTTP);
   EXPECT_EQ(
     kvikio::infer_remote_endpoint_type("https://account.blob.core.windows.net/container/blob"),
-    kvikio::RemoteEndpointType::AZURE_PUBLIC);
+    kvikio::RemoteEndpointType::AZURE);
   EXPECT_EQ(kvikio::infer_remote_endpoint_type(
               "https://bucket-name.s3.region-code.amazonaws.com/"
               "object-key-name?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=sig&"

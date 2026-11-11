@@ -38,7 +38,7 @@ def test_infer_remote_endpoint_type(aws_env):
         kvikio.infer_remote_endpoint_type(
             "https://account.blob.core.windows.net/container/blob"
         )
-        == kvikio.RemoteEndpointType.AZURE_PUBLIC
+        == kvikio.RemoteEndpointType.AZURE
     )
     assert (
         kvikio.infer_remote_endpoint_type(

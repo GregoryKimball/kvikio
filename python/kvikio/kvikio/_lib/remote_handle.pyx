@@ -27,7 +27,7 @@ cdef extern from "<kvikio/remote_handle.hpp>" namespace "kvikio" nogil:
         S3_PRESIGNED_URL
         WEBHDFS
         HTTP
-        AZURE_PUBLIC
+        AZURE
     cdef cppclass cpp_RemoteEndpoint "kvikio::RemoteEndpoint":
         string str() except +
 
@@ -61,9 +61,8 @@ cdef extern from "<kvikio/remote_handle.hpp>" namespace "kvikio" nogil:
                                                  (cpp_RemoteEndpoint):
         cpp_S3EndpointWithPresignedUrl(string presigned_url) except +
 
-    cdef cppclass cpp_AzurePublicEndpoint "kvikio::AzurePublicEndpoint" \
-                                          (cpp_RemoteEndpoint):
-        cpp_AzurePublicEndpoint(string url) except +
+    cdef cppclass cpp_AzureEndpoint "kvikio::AzureEndpoint" (cpp_RemoteEndpoint):
+        cpp_AzureEndpoint(string url) except +
 
     RemoteEndpointType cpp_infer_remote_endpoint_type "kvikio::infer_remote_endpoint_type"(
         string url
@@ -360,7 +359,7 @@ cdef class RemoteFile:
         )
 
     @staticmethod
-    def open_azure_public(
+    def open_azure(
         url: str,
         nbytes: Optional[int],
     ):
@@ -369,7 +368,7 @@ cdef class RemoteFile:
 
         with nogil:
             cpp_endpoint = cast_to_remote_endpoint(
-                make_unique[cpp_AzurePublicEndpoint](cpp_url)
+                make_unique[cpp_AzureEndpoint](cpp_url)
             )
 
         return RemoteFile._from_endpoint(

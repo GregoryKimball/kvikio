@@ -42,10 +42,10 @@ class RemoteEndpointType(enum.Enum):
         Generic HTTP or HTTPS endpoint for accessing files from web servers.
         This is used for standard web resources that do not fit the other
         specific categories.
-    AZURE_PUBLIC : int
-        Azure Blob Storage endpoint for publicly accessible blobs (anonymous read
-        access enabled on the container). No credentials required. Also works with
-        SAS URLs, since the authorization is embedded in the URL query.
+    AZURE : int
+        Azure Blob Storage endpoint. Currently supports anonymous access, i.e.
+        publicly accessible blobs and SAS URLs (authorization embedded in the URL
+        query).
 
     See Also
     --------
@@ -58,7 +58,7 @@ class RemoteEndpointType(enum.Enum):
     S3_PRESIGNED_URL = 3
     WEBHDFS = 4
     HTTP = 5
-    AZURE_PUBLIC = 6
+    AZURE = 6
 
     @staticmethod
     def _map_to_internal(remote_endpoint_type: RemoteEndpointType):
@@ -316,11 +316,11 @@ class RemoteFile:
         )
 
     @classmethod
-    def open_azure_public(cls, url: str, nbytes: Optional[int] = None) -> RemoteFile:
-        """Open a publicly accessible Azure Blob Storage file.
+    def open_azure(cls, url: str, nbytes: Optional[int] = None) -> RemoteFile:
+        """Open an Azure Blob Storage file.
 
-        No Azure credentials are needed. The container must allow anonymous read
-        access, or `url` must be a SAS URL.
+        Requests are currently sent anonymously, so the container must allow
+        public read access, or `url` must be a SAS URL.
 
         Parameters
         ----------
@@ -330,11 +330,14 @@ class RemoteFile:
             - ``https://<account>.blob.core.windows.net/<container>/<blob>``
             - ``https://<account>.dfs.core.windows.net/<container>/<blob>``
             - ``abfs[s]://<container>@<account>.dfs.core.windows.net/<blob>``
+
+            Any other http/https URL, such as one pointing to a local emulator,
+            is used as is.
         nbytes
             The size of the file. If None, KvikIO will ask the server
             for the file size.
         """
-        return cls(_get_remote_module().RemoteFile.open_azure_public(url, nbytes))
+        return cls(_get_remote_module().RemoteFile.open_azure(url, nbytes))
 
     @classmethod
     def open_webhdfs(
@@ -382,7 +385,7 @@ class RemoteFile:
             - S3 for public access
             - S3 presigned URL
             - WebHDFS
-            - Azure Blob Storage for public access
+            - Azure Blob Storage
             - HTTP/HTTPS
         remote_endpoint_type : RemoteEndpointType, optional
             The type of remote endpoint. Default is :class:`RemoteEndpointType.AUTO`
@@ -391,7 +394,7 @@ class RemoteFile:
             :class:`RemoteEndpointType.S3_PUBLIC`,
             :class:`RemoteEndpointType.S3_PRESIGNED_URL`,
             :class:`RemoteEndpointType.WEBHDFS`,
-            :class:`RemoteEndpointType.AZURE_PUBLIC`, or
+            :class:`RemoteEndpointType.AZURE`, or
             :class:`RemoteEndpointType.HTTP` to force a specific endpoint type.
         allow_list : list of RemoteEndpointType, optional
             List of allowed endpoint types. If provided:
@@ -406,7 +409,7 @@ class RemoteFile:
             :class:`RemoteEndpointType.S3_PUBLIC`,
             :class:`RemoteEndpointType.S3_PRESIGNED_URL`,
             :class:`RemoteEndpointType.WEBHDFS`,
-            :class:`RemoteEndpointType.AZURE_PUBLIC`, and
+            :class:`RemoteEndpointType.AZURE`, and
             :class:`RemoteEndpointType.HTTP`.
         nbytes : int, optional
             File size in bytes. If not provided, the function sends an additional
