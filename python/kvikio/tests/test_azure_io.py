@@ -9,13 +9,14 @@ import time
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 
 import pytest
 import utils
 
 import kvikio
 import kvikio.defaults
+from kvikio.utils import LargeBacklogHTTPServer
 
 pytestmark = pytest.mark.skipif(
     not kvikio.is_remote_file_available(),
@@ -120,7 +121,7 @@ def endpoint_port():
 
 
 def start_azure_server(ip_address, port, ready):
-    server = ThreadingHTTPServer((ip_address, port), AzureBlobHandler)
+    server = LargeBacklogHTTPServer((ip_address, port), AzureBlobHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     ready.set()
     time.sleep(600)
