@@ -44,6 +44,8 @@ enum class RemoteEndpointType : uint8_t {
             ///< accessing files stored in HDFS over HTTP/HTTPS.
   HTTP,  ///< Generic HTTP or HTTPS endpoint for accessing files from web servers. This is used for
          ///< standard web resources that do not fit the other specific categories.
+  AZURE,  ///< Azure Blob Storage endpoint. Currently supports anonymous access, i.e. publicly
+          ///< accessible blobs and SAS URLs (authorization embedded in the URL query).
 };
 
 /**
@@ -327,6 +329,60 @@ class S3EndpointWithPresignedUrl : public RemoteEndpoint {
 };
 
 /**
+ * @brief A remote endpoint for Azure Blob Storage
+ *
+ * Requests are currently sent anonymously, which works for blobs in containers configured with
+ * public read access and for SAS URLs. The following URL formats are supported:
+ *   - "https://<account>.blob.core.windows.net/<container>/<blob>"
+ *   - "https://<account>.dfs.core.windows.net/<container>/<blob>"
+ *   - "abfs[s]://<container>@<account>.dfs.core.windows.net/<blob>"
+ *
+ * The latter two are converted to the Blob service URL, which supports anonymous range reads.
+ */
+class AzureEndpoint : public RemoteEndpoint {
+ private:
+  std::string _url;
+  curl_slist* _curl_header_list{};
+
+ public:
+  /**
+   * @brief Create an Azure endpoint from a url.
+   *
+   * @exception std::invalid_argument if the url is neither a supported Azure Blob Storage url nor
+   * an http/https url.
+   *
+   * @param url The url to the Azure blob. Any other http/https url, such as one pointing to a
+   * local emulator, is used as is.
+   */
+  explicit AzureEndpoint(std::string url);
+
+  ~AzureEndpoint() override;
+  void setopt(CurlHandle& curl) override;
+  std::string str() const override;
+  std::size_t get_file_size() override;
+  void setup_range_request(CurlHandle& curl, std::size_t file_offset, std::size_t size) override;
+
+  /**
+   * @brief Convert a supported Azure url to the "https://<account>.blob.core.windows.net/..."
+   * form.
+   *
+   * @exception std::invalid_argument if the url is not a supported Azure Blob Storage url.
+   *
+   * @param url An Azure Blob Storage url.
+   * @return The Blob service url.
+   */
+  [[nodiscard]] static std::string to_blob_url(std::string const& url);
+
+  /**
+   * @brief Whether the given URL is a supported Azure Blob Storage url.
+   *
+   * @param url A URL.
+   * @return Boolean answer.
+   */
+  static bool is_url_valid(std::string const& url) noexcept;
+};
+
+/**
  * @brief Infer remote endpoint type from URL.
  *
  * This function follows the same endpoint-selection order as `RemoteHandle::open()` in
@@ -361,11 +417,12 @@ class RemoteHandle {
    *   - S3 with credentials
    *   - S3 presigned URL
    *   - WebHDFS
+   *   - Azure Blob Storage
    *   - HTTP/HTTPS
    * @param remote_endpoint_type The type of remote endpoint. Default is RemoteEndpointType::AUTO
    * which automatically detects the endpoint type from the URL. Can be explicitly set to
-   * RemoteEndpointType::S3, RemoteEndpointType::S3_PRESIGNED_URL, RemoteEndpointType::WEBHDFS, or
-   * RemoteEndpointType::HTTP to force a specific endpoint type.
+   * RemoteEndpointType::S3, RemoteEndpointType::S3_PRESIGNED_URL, RemoteEndpointType::WEBHDFS,
+   * RemoteEndpointType::AZURE, or RemoteEndpointType::HTTP to force a specific endpoint type.
    * @param allow_list Optional list of allowed endpoint types. If provided:
    *   - If remote_endpoint_type is RemoteEndpointType::AUTO, Types are tried in the exact order
    *     specified until a match is found.
@@ -373,8 +430,8 @@ class RemoteHandle {
    *     thrown.
    *
    * If not provided, defaults to all supported types in this order: RemoteEndpointType::S3,
-   * RemoteEndpointType::S3_PRESIGNED_URL, RemoteEndpointType::WEBHDFS, and
-   * RemoteEndpointType::HTTP.
+   * RemoteEndpointType::S3_PUBLIC, RemoteEndpointType::S3_PRESIGNED_URL,
+   * RemoteEndpointType::WEBHDFS, RemoteEndpointType::AZURE, and RemoteEndpointType::HTTP.
    * @param nbytes Optional file size in bytes. If not provided, the function sends additional
    * request to the server to query the file size.
    * @return A RemoteHandle object that can be used to read data from the remote file.

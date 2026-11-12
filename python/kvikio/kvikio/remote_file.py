@@ -42,6 +42,10 @@ class RemoteEndpointType(enum.Enum):
         Generic HTTP or HTTPS endpoint for accessing files from web servers.
         This is used for standard web resources that do not fit the other
         specific categories.
+    AZURE : int
+        Azure Blob Storage endpoint. Currently supports anonymous access, i.e.
+        publicly accessible blobs and SAS URLs (authorization embedded in the URL
+        query).
 
     See Also
     --------
@@ -54,6 +58,7 @@ class RemoteEndpointType(enum.Enum):
     S3_PRESIGNED_URL = 3
     WEBHDFS = 4
     HTTP = 5
+    AZURE = 6
 
     @staticmethod
     def _map_to_internal(remote_endpoint_type: RemoteEndpointType):
@@ -311,6 +316,30 @@ class RemoteFile:
         )
 
     @classmethod
+    def open_azure(cls, url: str, nbytes: Optional[int] = None) -> RemoteFile:
+        """Open an Azure Blob Storage file.
+
+        Requests are currently sent anonymously, so the container must allow
+        public read access, or `url` must be a SAS URL.
+
+        Parameters
+        ----------
+        url
+            URL to the remote file. Supported formats:
+
+            - ``https://<account>.blob.core.windows.net/<container>/<blob>``
+            - ``https://<account>.dfs.core.windows.net/<container>/<blob>``
+            - ``abfs[s]://<container>@<account>.dfs.core.windows.net/<blob>``
+
+            Any other http/https URL, such as one pointing to a local emulator,
+            is used as is.
+        nbytes
+            The size of the file. If None, KvikIO will ask the server
+            for the file size.
+        """
+        return cls(_get_remote_module().RemoteFile.open_azure(url, nbytes))
+
+    @classmethod
     def open_webhdfs(
         cls,
         url: str,
@@ -356,6 +385,7 @@ class RemoteFile:
             - S3 for public access
             - S3 presigned URL
             - WebHDFS
+            - Azure Blob Storage
             - HTTP/HTTPS
         remote_endpoint_type : RemoteEndpointType, optional
             The type of remote endpoint. Default is :class:`RemoteEndpointType.AUTO`
@@ -363,8 +393,9 @@ class RemoteFile:
             explicitly set to :class:`RemoteEndpointType.S3`,
             :class:`RemoteEndpointType.S3_PUBLIC`,
             :class:`RemoteEndpointType.S3_PRESIGNED_URL`,
-            :class:`RemoteEndpointType.WEBHDFS`, or :class:`RemoteEndpointType.HTTP`
-            to force a specific endpoint type.
+            :class:`RemoteEndpointType.WEBHDFS`,
+            :class:`RemoteEndpointType.AZURE`, or
+            :class:`RemoteEndpointType.HTTP` to force a specific endpoint type.
         allow_list : list of RemoteEndpointType, optional
             List of allowed endpoint types. If provided:
 
@@ -377,7 +408,9 @@ class RemoteFile:
             :class:`RemoteEndpointType.S3`,
             :class:`RemoteEndpointType.S3_PUBLIC`,
             :class:`RemoteEndpointType.S3_PRESIGNED_URL`,
-            :class:`RemoteEndpointType.WEBHDFS`, and :class:`RemoteEndpointType.HTTP`.
+            :class:`RemoteEndpointType.WEBHDFS`,
+            :class:`RemoteEndpointType.AZURE`, and
+            :class:`RemoteEndpointType.HTTP`.
         nbytes : int, optional
             File size in bytes. If not provided, the function sends an additional
             request to the server to query the file size.
